@@ -1,0 +1,114 @@
+version: '3.9'
+
+# ─── What is Docker Compose? ──────────────────────────────────────────────────
+# A tool to define and run MULTIPLE containers as a single application.
+# One `docker-compose up` command starts: Node app + Postgres + Redis.
+#
+# WHY CONTAINERS?
+#   Each service runs in isolation — Postgres doesn't conflict with anything on your OS.
+#   Identical environment for every developer. No "works on my machine" issues.
+#   Easy to tear down and recreate from scratch.
+#
+# HOW SERVICES TALK TO EACH OTHER:
+#   Docker Compose creates a private network. Services talk to each other
+#   by SERVICE NAME (not localhost). So Node app connects to "postgres:5432"
+#   not "localhost:5432".
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine  # alpine = smaller image, same functionality
+    environment:
+      POSTGRES_DB:       urlshortener
+      POSTGRES_USER:     dev
+      POSTGRES_PASSWORD: devpass
+    ports:
+      - "5432:5432"  # host:container — connect from your local machine with port 5432
+    volumes:
+      # Named volume: persists Postgres data even if the container is stopped/removed
+      # Without this, ALL DATA IS LOST when the container restarts
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Docker will check this command periodically
+      # "app" service won't start until postgres is healthy
+      test: ["CMD-SHELL", "pg_isready -U dev -d urlshortener"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    # maxmemory: Redis won't use more than 256MB RAM
+    # allkeys-lru: When full, evict Least Recently Used keys
+    #              Perfect for a cache: hot URLs stay, cold ones get evicted
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Node.js API Server ───────────────────────────────────────────────────────
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV:          development
+      PORT:              3000
+      BASE_URL:          http://localhost:3000
+      CORS_ORIGIN:       http://localhost:5173
+      # "postgres" = service name, not localhost — Docker's internal DNS resolves it
+      DATABASE_URL:      postgresql://dev:devpass@postgres:5432/urlshortener
+      REDIS_URL:         redis://redis:6379
+      CACHE_TTL_SECONDS: 3600
+      JWT_SECRET:        dev-jwt-secret-change-in-production
+      JWT_EXPIRES_IN:    7d
+      BCRYPT_ROUNDS:     12
+      RATE_LIMIT_WINDOW_SECONDS: 60
+      RATE_LIMIT_ANON_MAX:  10
+      RATE_LIMIT_FREE_MAX:  50
+    depends_on:
+      postgres:
+        condition: service_healthy   # Wait for Postgres health check to pass
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount source code for hot-reloading in development
+      - ./backend/src:/app/src
+    restart: unless-stopped  # Auto-restart if crashes
+
+  # ── Analytics Background Worker ──────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # Override the default start command — run the worker instead of the API
+    command: node src/workers/analyticsWorker.js
+    environment:
+      NODE_ENV:    development
+      DATABASE_URL: postgresql://dev:devpass@postgres:5432/urlshortener
+      REDIS_URL:    redis://redis:6379
+      JWT_SECRET:   dev-jwt-secret-change-in-production
+      ANALYTICS_FLUSH_INTERVAL_MS: 60000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ── Named Volumes ─────────────────────────────────────────────────────────────
+# Volumes are stored on the HOST machine, not inside any container.
+# They survive container restarts, deletions, and rebuilds.
+volumes:
+  pgdata:

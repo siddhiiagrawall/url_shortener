@@ -1,0 +1,20 @@
+# ── Never commit node_modules from either project ─────────
+node_modules/
+
+# ── Never commit real .env files ──────────────────────────
+# .env.example files ARE committed (they have no real secrets)
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# ── Build output ──────────────────────────────────────────
+frontend/dist/
+
+# ── Logs ──────────────────────────────────────────────────
+*.log
+
+# ── OS / Editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+.idea/
