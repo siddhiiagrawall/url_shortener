@@ -29,15 +29,22 @@ const errorHandler        = require('./middleware/errorHandler');
 const app = express();
 
 // ── 1. CORS ──────────────────────────────────────────────────────────────────
-// CORS = Cross-Origin Resource Sharing
-// Browsers block JS from calling APIs on a different domain by default.
-// Our React frontend (localhost:5173) calling our API (localhost:3000) would be blocked.
-// We explicitly allow our frontend's origin.
+// CORS_ORIGIN can be a comma-separated list of origins:
+//   Development: http://localhost:5173
+//   Production:  https://url-shortener.vercel.app,https://yourdomain.com
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim());
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., mobile apps, Postman, curl)
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS blocked: ${origin}`));
+  },
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true, // Allow cookies/auth headers
+  credentials: true,
 }));
 
 // ── 2. Body Parsing ───────────────────────────────────────────────────────────

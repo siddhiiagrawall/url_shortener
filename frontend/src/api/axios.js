@@ -12,8 +12,13 @@
 
 import axios from 'axios';
 
+// In development: Vite proxy forwards /api/v1 → http://localhost:3000/api/v1
+// In production:  VITE_API_URL = https://your-backend.railway.app/api/v1
+//
+// WHY VITE_ prefix? Vite only exposes env vars with this prefix to the browser bundle.
+// Never put secrets in VITE_ vars — they're visible to anyone who views page source.
 const api = axios.create({
-  baseURL: '/api/v1', // Vite proxy forwards this to http://localhost:3000/api/v1
+  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
