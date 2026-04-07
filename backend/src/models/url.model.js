@@ -15,7 +15,7 @@ const UrlModel = {
   async create({ originalUrl, userId, expiresAt }) {
     const result = await pool.query(
       `INSERT INTO urls (short_code, original_url, user_id, expires_at)
-       VALUES ('__pending__', $1, $2, $3)
+       VALUES ('__tmp__', $1, $2, $3)
        RETURNING id`,
       [originalUrl, userId || null, expiresAt || null]
     );

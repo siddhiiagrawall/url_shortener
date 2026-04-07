@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS urls (
 
     -- The short code, e.g., "aB3k"
     -- Derived from Base62(id) — we update this after getting the id back from INSERT
-    -- VARCHAR(10): 7-char codes + room for custom codes up to 10 chars
-    short_code   VARCHAR(10) NOT NULL,
+    -- VARCHAR(20): codes are max 10 chars, but extra room for edge cases
+    short_code   VARCHAR(20) NOT NULL,
 
     -- TEXT: no length limit — original URLs can be very long
     original_url TEXT NOT NULL,
