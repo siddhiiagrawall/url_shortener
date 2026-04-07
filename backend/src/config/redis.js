@@ -1,28 +1,28 @@
 // ─── Redis Configuration ──────────────────────────────────────────────────────
 // We use 'ioredis' — the most feature-complete Redis client for Node.js.
 //
-// WHY Redis?
-//   Postgres lives on disk → reads take ~1-5ms
-//   Redis lives in RAM   → reads take ~0.1-0.5ms (10x faster)
+// LOCAL:      REDIS_URL=redis://localhost:6379   (plain TCP)
+// PRODUCTION: REDIS_URL=rediss://...upstash.io:6379  (TLS — Upstash requires it)
 //
-// We use Redis for 3 things:
-//   1. Cache: short_code → original_url (avoids DB hit on every redirect)
-//   2. Rate Limiting: per-IP/user request counters
-//   3. Analytics Queue: click events stream (async, non-blocking)
+// WHY TLS for Upstash?
+//   Upstash is a managed cloud Redis. All traffic goes over the internet,
+//   so it must be encrypted. 'rediss://' = Redis over TLS (like HTTPS vs HTTP).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Redis = require('ioredis');
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  // ioredis automatically retries failed commands on reconnect.
-  // lazyConnect: false means it connects immediately on startup.
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+
+// When using Upstash (rediss://), we must explicitly enable TLS.
+// ioredis reads the scheme but needs tls:{} to trust cloud certificates.
+const tlsOptions = redisUrl.startsWith('rediss://')
+  ? { tls: { rejectUnauthorized: false } }  // false = accept Upstash's cert
+  : {};
+
+const redis = new Redis(redisUrl, {
+  ...tlsOptions,
   lazyConnect: false,
-
-  // How many times to retry a failed command before giving up.
   maxRetriesPerRequest: 3,
-
-  // Reconnect strategy: wait 50ms, then 100ms, then 200ms... up to 2 seconds.
-  // This is an exponential backoff — prevents thundering herd on reconnect.
   retryStrategy(times) {
     const delay = Math.min(times * 50, 2000);
     return delay;
@@ -36,9 +36,8 @@ redis.on('connect', () => {
 });
 
 redis.on('error', (err) => {
-  // LEARNING: We log but DON'T crash on Redis errors.
-  // Redis is a cache — if it's down, we fall back to Postgres.
-  // The app degrades gracefully (slower) but doesn't die.
+  // Log but DON'T crash — Redis is a cache layer, not source of truth.
+  // If Redis is down, requests fall back to Postgres (slower but correct).
   console.error('⚠️  Redis error (will fallback to DB):', err.message);
 });
 
