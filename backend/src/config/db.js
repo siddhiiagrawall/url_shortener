@@ -16,23 +16,27 @@ const { Pool } = require('pg');
 
 // Create a single pool instance for the entire app.
 // This is a singleton — we export it and reuse it everywhere.
+// SSL: Neon (and most cloud Postgres) require an encrypted connection.
+// We enable SSL whenever the DATABASE_URL looks like a cloud host.
+// rejectUnauthorized: false → trust the server's certificate without verifying
+// the CA chain. Required for Neon's certs which aren't in Node's trust store.
+const dbUrl = process.env.DATABASE_URL || '';
+const sslConfig = (dbUrl.includes('neon.tech') || dbUrl.includes('sslmode=require'))
+  ? { rejectUnauthorized: false }
+  : false;
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
 
-  // Minimum connections kept open even when idle.
-  // WHY 2? So the first request after a quiet period doesn't pay connection cost.
-  min: parseInt(process.env.DB_POOL_MIN) || 2,
+  // SSL for cloud databases (Neon, Render Postgres, Supabase, etc.)
+  ssl: sslConfig,
 
-  // Maximum simultaneous connections.
-  // WHY 10? Postgres has a default max of 100 connections.
-  // With multiple app instances, keep this low enough to share.
-  max: parseInt(process.env.DB_POOL_MAX) || 10,
+  // Free tier Render/Neon have tight connection limits — keep pool small
+  min: parseInt(process.env.DB_POOL_MIN) || 1,
+  max: parseInt(process.env.DB_POOL_MAX) || 5,
 
-  // Kill idle connections after 30 seconds to free resources.
   idleTimeoutMillis: 30000,
-
-  // Reject a connection attempt if it takes longer than 2 seconds.
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 5000, // Cloud DBs take longer to connect than local
 });
 
 // Test the connection when the app starts.
